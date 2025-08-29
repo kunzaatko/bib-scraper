@@ -1,4 +1,5 @@
 import argparse
+import logging
 import os
 import time
 from datetime import datetime
@@ -7,6 +8,7 @@ from textwrap import dedent
 import toml
 import undetected_chromedriver as uc
 from rich.console import Console
+from rich.logging import RichHandler
 from rich.progress import track
 from selenium.common.exceptions import NoSuchElementException
 from selenium.webdriver.common.by import By
@@ -15,16 +17,21 @@ from selenium.webdriver.common.keys import Keys
 from . import utils
 from .item import ScholarItem
 
+FORMAT = "%(message)s"
+logging.basicConfig(
+    level=logging.INFO, format=FORMAT, datefmt="[%X]", handlers=[RichHandler()]
+)
 console = Console()
+log = logging.getLogger(__name__)
 
 
 def log_failed_item(item_data, filename):
     try:
         with open(filename, "a") as f:
             toml.dump({"failed_item": item_data}, f)
-        console.print(f"Logged failed item to {filename}")
+        log.debug("Logged failed item to {filename}")
     except Exception as e:
-        console.print(f"Error logging failed item to {filename}: {e}")
+        log.warning(f"Error logging failed item to {filename}: {e}")
 
 
 def argument_parser():
@@ -87,7 +94,7 @@ def main(N=None):
             zot, args.zotero_parent_collection_name
         )
     except Exception:
-        console.print("Could not set up parent collection. Exiting.")
+        log.warning("Could not set up parent collection. Exiting.")
         return
 
     # Get or create date-stamped sub-collection
@@ -98,10 +105,10 @@ def main(N=None):
             zot, today_date, parent_collection_id
         )
     except Exception:
-        console.print("Could not set up date-stamped sub-collection. Exiting.")
+        log.warning("Could not set up date-stamped sub-collection. Exiting.")
         return
 
-    console.print(f"Searching for articles with query: '{args.query}'...")
+    log.info(f"Searching for articles with query: '{args.query}'...")
 
     options = uc.ChromeOptions()
     browser = uc.Chrome(options=options)
@@ -119,7 +126,9 @@ def main(N=None):
         search_box.send_keys(args.query)
         search_box.send_keys(Keys.RETURN)
 
-    input("Press Enter when you have solved the reCAPTCHA to continue...")
+    console.input(
+        "[yellow bold]Press Enter when you have solved the reCAPTCHA to continue..."
+    )
 
     items = []
 
@@ -140,12 +149,12 @@ def main(N=None):
                 if len(items) >= args.item_limit:
                     break
                 pub = title.text
-                console.print(f"\nProcessing item {len(items) + 1}: {pub}")
+                log.info(f'\nProcessing item {len(items) + 1}: "{pub}"')
                 scholar_item = ScholarItem(title=pub, zot=zot)
                 if scholar_item.retrieve_metadata():
                     item = scholar_item.to_zotero_item()
                     if item["DOI"]:
-                        console.print(
+                        log.info(
                             dedent(
                                 f"""
                             Found DOI {item["DOI"]}. Updated keys {
@@ -174,13 +183,13 @@ def main(N=None):
                         items.append(item)
                     else:
                         failed_items_data.append(item)
-                        console.print(f"No DOI found. Skipping {index}...")
+                        log.warning(f"No DOI found. Skipping {index}...")
                 else:
                     failed_items_data.append(scholar_item.zotero_item)
-                    console.print(f"No metadata found. Skipping {index}...")
+                    log.warning(f"No metadata found. Skipping {index}...")
             if len(items) >= args.item_limit:
                 break
-            console.print("Navigating to next page...\n ")
+            log.info("Navigating to next page...\n ")
 
             # TODO: Sometimes the next button is not present on the page because the page has a different size. It
             # should hold the index of the page and instead then search for the next index which is always on the page. <28-08-25>
@@ -209,29 +218,31 @@ def main(N=None):
         ):
             response = zot.create_items(items_50)
             if len(response["failed"]):
-                console.print(f"Some items failed to be added: {response['failed']}")
+                log.warning(f"Some items failed to be added: {response['failed']}")
     except Exception as e:
-        console.print(f"Error adding items to Zotero: {e}")
+        log.warning(f"Error adding items to Zotero: {e}")
         return
 
-    console.print("Adding items to the date collection...")
+    log.info("Adding items to the date collection...")
     for _, item in track(
         response["successful"].items(), description="Adding items to collection..."
     ):
         zot.addto_collection(date_collection_id, item)
 
-    console.print("--- Summary ---")
-    console.print(
-        f"Added {len(items)} to collection {date_collection_id} as a subcollection of {parent_collection_id}"
+    log.info(
+        dedent(f"""
+                    --- Summary ---
+                    Added {len(items)} to collection {date_collection_id} as a subcollection of {parent_collection_id}
+                    """)
     )
 
     if failed_items_data:
-        console.print(
+        log.warning(
             f"Failed to add {len(failed_items_data)} articles. Details logged to {failed_log_filename}"
         )
         log_failed_item(failed_items_data, failed_log_filename)
     else:
-        console.print("No articles failed to be added.")
+        log.info("No articles failed to be added.")
 
 
 if __name__ == "__main__":
