@@ -26,3 +26,7 @@ build-backend = "uv_build"
 
 [dependency-groups]
 dev = ["ipython>=8.37.0"]
+
+[tool.pyright]
+venvPath = "."
+venv = ".venv"
