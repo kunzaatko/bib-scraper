@@ -1,9 +1,15 @@
+import logging
 import os
 
 from pyzotero import zotero
 
 
-def get_or_create_collection(zot, collection_name, parent_collection_id=None):
+def get_or_create_collection(
+    zot,
+    collection_name,
+    parent_collection_id=None,
+    logger=logging.getLogger(__name__),
+):
     """
     Get or create the collection in Zotero
     """
@@ -26,10 +32,10 @@ def get_or_create_collection(zot, collection_name, parent_collection_id=None):
                 break
 
     if target_collection:
-        print(f"Found existing collection: {collection_name}")
+        logger.info(f'Found existing collection: "{collection_name}"')
         return target_collection["data"]["key"]
     else:
-        print(f"Creating new collection: {collection_name}")
+        logger.info(f'Creating new collection: "{collection_name}"')
         new_collection_data = {"name": collection_name}
         if parent_collection_id:
             new_collection_data["parentCollection"] = parent_collection_id
@@ -44,9 +50,9 @@ def get_or_create_collection(zot, collection_name, parent_collection_id=None):
                 # The key is usually the value of the first (and only) item in the success dict
                 return list(new_collection["success"].values())[0]
             else:
-                raise Exception(f"Failed to create collection: {collection_name}")
+                raise Exception(f'Failed to create collection: "{collection_name}"')
         except Exception as e:
-            print(f"Error creating collection {collection_name}: {e}")
+            logger.error(f'Error creating collection "{collection_name}": {e}')
             raise
 
 
