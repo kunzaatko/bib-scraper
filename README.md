@@ -1,19 +1,34 @@
 # Bib Scraper
 
-A CLI tool designed to automate the process of scraping scholarly articles from Google Scholar and integrating them into your Zotero account. This tool is particularly useful for researchers conducting **meta-analysis academic articles**, as it streamlines the collection and organization of relevant literature.
+A CLI tool designed to automate the process of scraping scholarly articles from Google Scholar and integrating them into
+your Zotero account. This tool is particularly useful for researchers collecting literature for **meta-analysis**.
 
 ## Features
-- Search scholarly articles using a command-line query.
-- Automatically add articles to a specified Zotero collection, organized by date.
-- Leverages DOI for rich metadata and PDF attachments in Zotero.
-- Logs failed article additions to TOML files for manual review.
+
+- **Intelligent Article Search**: Search scholarly articles using command-line queries with Google Scholar integration
+- **Advanced Similarity Matching**: Uses sophisticated author and title similarity algorithms to match Google Scholar results with CrossRef metadata:
+  - Author matching based on last name comparison
+  - Title similarity using word overlap analysis
+  - Weighted scoring (70% author, 30% title) for accurate matching
+  - Abstract-based ranking for multiple matches
+- **Comprehensive Metadata Enrichment**: Automatically retrieves and populates rich metadata including:
+  - DOI, ISBN, ISSN identifiers
+  - Full abstracts and citations
+  - Publication details (journal, volume, issue, pages)
+  - Author information with affiliations
+  - Publisher and date information
+- **PDF Download & Attachment**: Automatically downloads available PDFs and attaches them to Zotero items
+- **CrossRef Integration**: Leverages CrossRef API for high-quality, structured metadata from millions of scholarly works
+- **Smart Organization**: Automatically creates date-stamped Zotero collections for organized storage
+- **Robust Error Handling**: Comprehensive logging of failed items to TOML files for manual review and retry
+- **Flexible Configuration**: Extensive CLI options for customization including debug mode, timeouts, and item limits
 
 ## Installation
 
 1.  **Clone the repository:**
 
     ```bash
-    git clone https://github.com/your-repo/bib-scraper.git
+    git clone https://github.com/kunzaatko/bib-scraper.git
     cd bib-scraper
     ```
 
@@ -68,6 +83,12 @@ The `bib-scraper` CLI tool accepts several arguments to customize its behavior:
 -   `--timeout`: Maximum timeout (in seconds) for the Chrome driver when waiting for elements to load.
     -   Type: `int`
     -   Default: `10`
+-   `--title-prepend-index`: Prepend the item title with the index of the item from Google Scholar.
+    -   Type: `bool`
+    -   Default: `True`
+-   `--debug`: Enable debug mode for detailed logging.
+    -   Type: `bool`
+    -   Default: `False`
 
 ### Help
 
@@ -88,7 +109,7 @@ uv run bib-scraper --query "your scholarly search query here"
 **Example:**
 
 ```bash
-uv run bib-scraper --query "machine learning in healthcare 2023" --item-limit 100
+uv run bib-scraper --query "machine learning in healthcare 2023" --item-limit 100 --debug
 ```
 
 ## Workflow Example
