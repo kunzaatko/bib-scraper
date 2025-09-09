@@ -2,6 +2,9 @@ import logging
 import os
 
 from pyzotero import zotero
+from rich.console import Console
+from rich.table import Table
+from rich.text import Text
 
 
 def get_or_create_collection(
@@ -64,3 +67,13 @@ def setup_zotero_client(libid=None, libtype=None, apikey=None):
     if apikey is None:
         apikey = os.getenv("ZOTERO_API_KEY")
     return zotero.Zotero(libid, libtype, apikey)
+
+
+def log_table(table: Table):
+    """Generate an ASCII formatted presentation of a Rich table
+    Eliminates any column styling
+    """
+    console = Console()
+    with console.capture() as capture:
+        console.print(table)
+    return Text.from_ansi(capture.get()).markup

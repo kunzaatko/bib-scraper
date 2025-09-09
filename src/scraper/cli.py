@@ -52,17 +52,16 @@ DEFAULT_LOGGING = {
         },
     },
 }
-FORMAT = "%(message)s"
 logging.config.dictConfig(DEFAULT_LOGGING)
-log = logging.getLogger(__name__)
-console = Console()
 
 
-def log_failed_item(item_data, filename):
+def log_failed_item(item_data: dict, filename, log=logging.getLogger(__name__)):
     try:
         with open(filename, "a") as f:
-            toml.dump({"failed_item": item_data}, f)
-        log.debug("Logged failed item to {filename}")
+            toml.dump(
+                {item_data.get("title", str(hash(item_data.values()))): item_data}, f
+            )
+        log.debug(f'Logged failed item to "{filename}"')
     except Exception as e:
         log.warning(f'Error logging failed item to "{filename}": {e}')
 
@@ -113,17 +112,41 @@ def argument_parser():
         type=int,
         help="Maximum timeout (in seconds) of the Chrome driver used for waiting for loading elements. Defaults to 10 seconds.",
     )
+    parser.add_argument(
+        "--title-prepend-index",
+        default=True,
+        type=bool,
+        help="Prepend the item title with the index of the item from Google Scholar. Defaults to True.",
+    )
+    parser.add_argument(
+        "--debug",
+        action="store_true",
+        help="Enable debug mode. Defaults to False.",
+    )
     return parser
 
 
 def main(N=None):
     parser = argument_parser()
     args = parser.parse_args()
+    log = logging.getLogger(__name__)
+    if args.debug:
+        log.setLevel(logging.DEBUG)
+    console = Console()
     if N is not None:
         args.item_limit = N
 
     zot = utils.setup_zotero_client(
         args.zotero_library_id, args.zotero_library_type, args.zotero_api_key
+    )
+
+    title_formater = (
+        (
+            lambda index,
+            title: f"{str(index).zfill(len(str(args.item_limit)))} - {title}"
+        )
+        if args.title_prepend_index
+        else (lambda _, title: title)
     )
 
     # Get or create parent collection
@@ -150,6 +173,7 @@ def main(N=None):
     log.info(f"Searching for articles with query: '{args.query}'...")
 
     options = uc.ChromeOptions()
+    options.add_argument("--disable-popup-blocking")
     # TODO: Recognize the chrome version that is used with `google-chrome --version` <04-09-25>
     browser = uc.Chrome(version_main=139, options=options)
 
@@ -206,49 +230,76 @@ def main(N=None):
                 div_html = div.get_attribute("outerHTML")
                 assert div_html
 
-                scholar_item = ScholarItem.from_div(div_html)
-                scholar_item.with_zotero(zot)
+                scholar_item = (
+                    ScholarItem.from_div(div_html)
+                    .with_zotero(zot)
+                    .with_driver_and_elem(browser, div)
+                    .with_logger(log)
+                    .with_timeout(args.timeout)
+                )
 
                 log.info(f'Processing item {len(items) + 1}: "{scholar_item.title}"...')
 
                 if scholar_item.retrieve_metadata():
                     item = scholar_item.to_zotero_item()
-                    if item["DOI"]:
+                    item_keys = [k for k in item.keys() if item[k]]
+                    if "DOI" in item_keys:
                         log.info(
                             dedent(
                                 f"""\
-                            Found [magenta]DOI[/magenta] "{item["DOI"]}". Updated keys {
+                                Found [magenta]DOI[/magenta] "{
+                                    item["DOI"]
+                                }". Enriched item has keys {
                                     ", ".join(
-                                        [
-                                            f"[magenta]{k}[/magenta]"
-                                            for k in item.keys()
-                                            if k != "DOI"
-                                            and (
-                                                item[k] != []
-                                                and item[k] != ""
-                                                and item[k] != {}
-                                            )
-                                        ]
+                                        [f"[magenta]{k}[/magenta]" for k in item_keys]
+                                    )
+                                }\
+                                """
+                            ),
+                            extra={"markup": True},
+                        )
+                    else:
+                        log.info(
+                            dedent(
+                                f"""\
+                                 [bold]DOI not found[/bold] for item {
+                                    len(items) + 1
+                                }. Enriched item has keys {
+                                    ", ".join(
+                                        [f"[magenta]{k}[/magenta]" for k in item_keys]
                                     )
                                 }\
                             """
                             ),
                             extra={"markup": True},
                         )
-                        item["collections"] = [date_collection_id]
-                        item["title"] = (
-                            str(len(items) + 1).zfill(len(str(args.item_limit)))
-                            + " - "
-                            + item["title"]
-                        )
-                        items.append(item)
-                        progress.update(items_task, advance=1)
-                    else:
-                        identify_failed_items.append(item)
-                        log.warning(f"No DOI found. Skipping {len(items) + 1}...")
                 else:
+                    item = scholar_item.to_zotero_item()
+                    item_keys = [k for k in item.keys() if item[k]]
+                    log.warning(
+                        f"Failed to enrich metadata for item {len(items) + 1}..."
+                    )
+                    log.info(
+                        dedent(
+                            f"""\
+                            Item has keys {
+                                ", ".join(
+                                    [f"[magenta]{k}[/magenta]" for k in item_keys]
+                                )
+                            }\
+                        """
+                        ),
+                        extra={"markup": True},
+                    )
                     identify_failed_items.append(scholar_item.zotero_item)
-                    log.warning(f"No metadata found. Skipping {len(items) + 1}...")
+
+                item["title"] = title_formater(len(items) + 1, item["title"])
+                if scholar_item.get_alternates() or scholar_item.is_pdf:
+                    if scholar_item.download_pdf():
+                        log.info(f'Downloaded PDF for item "{scholar_item.title}"')
+
+                items.append({"data": item, "item": scholar_item})
+                progress.update(items_task, advance=1)
             if len(items) >= args.item_limit:
                 break
             log.info("Navigating to next page...")
@@ -270,16 +321,47 @@ def main(N=None):
 
     added_items = []
     create_failed_items = []
+    attachments_uploaded = []
     create_failed_logfile = f"failed-to-create-items-{today_date}.toml"
+    attachments_failed = []
+    attachments_failed_logfile = f"failed-to-upload-attachments-{today_date}.toml"
     try:
-        for items_50 in track(
+        for items_chunk in track(
             [items[i : i + 50] for i in range(0, len(items), 50)],
             description="Adding items to Zotero...",
         ):
-            response = zot.create_items(items_50)
+            response = zot.create_items([i["data"] for i in items_chunk])
+            # , date_collection_id)
+
             if len(response["failed"]):
                 log.warning(f"Some items failed to be added: {response['failed']}")
-                create_failed_items.extend(response["failed"])
+                create_failed_items.extend(response["failed"].items())
+
+            successful_items = [
+                items_chunk[int(k) - 1]["item"].with_zot_id(v["key"])
+                for (k, v) in response["successful"].items()
+            ]
+
+            for item in track(successful_items, description="Uploading attachments..."):
+                try:
+                    if item.attachments and item.upload_attachments():
+                        attachments_uploaded.append(
+                            {
+                                "title": item.title,
+                                "attachemts": [str(i) for i in item.attachments],
+                            }
+                        )
+                except Exception as e:
+                    attachments_failed.append(
+                        {
+                            "title": item.title,
+                            "attachemts": [str(i) for i in item.attachments],
+                        }
+                    )
+                    log.warning(
+                        f'Error uploading attachments for item "{item.title}": {e}'
+                    )
+
             added_items.extend(response["successful"].items())
     except Exception as e:
         log.warning(f"Error adding items to Zotero: {e}")
@@ -304,7 +386,15 @@ def main(N=None):
             extra={"markup": True},
         )
         for item in create_failed_items:
-            log_failed_item(item, create_failed_logfile)
+            log_failed_item(item, create_failed_logfile, log)
+
+    if attachments_failed:
+        log.warning(
+            f'[bold]Summary:[/bold] Failed to upload attachments for {len(attachments_failed)} items. Failed items have been logged to "{create_failed_logfile}".',
+            extra={"markup": True},
+        )
+        for item in attachments_failed:
+            log_failed_item(item, attachments_failed_logfile, log)
 
     if identify_failed_items:
         log.warning(
@@ -312,7 +402,7 @@ def main(N=None):
             extra={"markup": True},
         )
         for item in identify_failed_items:
-            log_failed_item(item, identify_failed_logfile)
+            log_failed_item(item, identify_failed_logfile, log)
 
 
 if __name__ == "__main__":
