@@ -74,7 +74,7 @@ The `bib-scraper` CLI tool accepts several arguments to customize its behavior:
 To see the command-line help, use the `--help` flag:
 
 ```bash
-uv run src/scraper/cli.py --help
+uv run bib-scraper --help
 ```
 
 ## Usage
@@ -82,13 +82,13 @@ uv run src/scraper/cli.py --help
 Run the script from the command line using `uv run`:
 
 ```bash
-uv run src/scraper/cli.py --query "your scholarly search query here"
+uv run bib-scraper --query "your scholarly search query here"
 ```
 
 **Example:**
 
 ```bash
-uv run src/scraper/cli.py --query "machine learning in healthcare 2023" --item-limit 100
+uv run bib-scraper --query "machine learning in healthcare 2023" --item-limit 100
 ```
 
 ## Workflow Example
