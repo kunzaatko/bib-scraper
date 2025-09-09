@@ -229,11 +229,19 @@ class ScholarItem:
         action = ActionChains(webdriver)
         action.move_to_element(alternate_anchor).click().perform()
 
-        divs = WebDriverWait(webdriver, timeout).until(
-            EC.presence_of_all_elements_located(
-                (By.CSS_SELECTOR, "div.gs_r.gs_or.gs_scl")
+        try:
+            divs = WebDriverWait(webdriver, timeout).until(
+                EC.presence_of_all_elements_located(
+                    (By.CSS_SELECTOR, "div.gs_r.gs_or.gs_scl")
+                )
             )
-        )
+        except Exception as e:
+            self.logger.error(
+                f'Getting alternates failed for item "{self.title}" with error:\n{e}'
+            )
+
+            webdriver.execute_script("window.history.go(-1)")
+            return False
 
         for div in divs:
             div_html = div.get_attribute("outerHTML")
