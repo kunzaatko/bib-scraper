@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Optional
 from urllib import request
 
+import humanize
 import pathvalidate
 from bs4 import BeautifulSoup
 from pyzotero.zotero import Zotero
@@ -61,6 +62,7 @@ class ScholarItem:
         self.is_html = False
         self.metadata_tags = []
 
+        self.alternate_pdf_sources = []
         self.alternates = []
 
     def _strip_title(self):
@@ -83,6 +85,10 @@ class ScholarItem:
 
         # Remove the metadata tags from the title
         self.title = metadata_pattern.sub("", self.title).strip()
+
+    def with_alternate_source(self, url: str):
+        self.alternate_pdf_sources.append(url)
+        return self
 
     def with_zotero(self, zot: Zotero):
         self.zot = zot
@@ -147,14 +153,26 @@ class ScholarItem:
         item.authors = authors
         return item
 
-    def download_pdf(self) -> Optional[Path]:
-        sources = [s.url for s in [self] + self.alternates if s.is_pdf]
+    def download_pdf(self, max_size=None) -> Optional[Path]:
+        sources = []
+        for s in [self] + self.alternates:
+            sources.extend(s.alternate_pdf_sources)
+            if s.is_pdf:
+                sources.append(s.url)
         self.attachment_dir = Path(tempfile.mkdtemp())
         self.pdf_name = pathvalidate.sanitize_filename(
             f"{self.title.replace(' ', '_')}.pdf", platform="auto"
         )
         for source in sources:
             try:
+                if max_size:
+                    site = request.urlopen(source)
+                    size = int(site.getheader("Content-Length", "0"))
+                    if size > max_size:
+                        self.logger.warning(
+                            f"Maximum size of the PDF exceeded. PDF size {humanize.naturalsize(size)} > {humanize.naturalsize(max_size)}. Skipping download..."
+                        )
+                        continue
                 pdf = request.urlretrieve(source, self.attachment_dir / self.pdf_name)
                 self.logger.info(
                     f'Downloaded PDF to "{self.attachment_dir / self.pdf_name}" from {source}'

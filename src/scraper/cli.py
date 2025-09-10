@@ -2,6 +2,7 @@ import argparse
 import logging
 import logging.config
 import os
+import re
 from datetime import datetime
 from textwrap import dedent
 
@@ -9,7 +10,7 @@ import toml
 import undetected_chromedriver as uc
 from rich.console import Console
 from rich.progress import Progress, track
-from selenium.common.exceptions import TimeoutException
+from selenium.common.exceptions import NoSuchElementException, TimeoutException
 from selenium.webdriver.common.by import By
 from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.support import expected_conditions as EC
@@ -117,6 +118,23 @@ def argument_parser():
         default=True,
         type=bool,
         help="Prepend the item title with the index of the item from Google Scholar. Defaults to True.",
+    )
+    parser.add_argument(
+        "--download-pdfs",
+        default=True,
+        type=bool,
+        help="Download PDFs. Defaults to False.",
+    )
+    parser.add_argument(
+        "--max-attachment-size",
+        default=10 * 1024 * 1024,
+        type=int,
+        help="Maximum attachment size (in bytes) to download. Defaults to 10MB.",
+    )
+    parser.add_argument(
+        "--try-retrieve-from-alternates",
+        action="store_true",
+        help="Try to retrieve the PDF from the alternates. Defaults to False.",
     )
     parser.add_argument(
         "--debug",
@@ -240,6 +258,30 @@ def main(N=None):
 
                 log.info(f'Processing item {len(items) + 1}: "{scholar_item.title}"...')
 
+                try:
+                    alternate_source = div.find_element(
+                        By.CSS_SELECTOR, "div.gs_ggs.gs_fl"
+                    ).find_element(By.TAG_NAME, "a")
+                    metadata_pattern = re.compile(r"\[([a-zA-Z0-9_-]+)\]")
+                    found_metadata = [
+                        t.lower()
+                        for t in metadata_pattern.findall(alternate_source.text)
+                    ]
+                    if "pdf" in found_metadata:
+                        link = alternate_source.get_attribute("href")
+                        scholar_item.with_alternate_source(link)
+                        log.debug(
+                            f'Alternate source for "{scholar_item.title}" PDF found "{link}"'
+                        )
+                    else:
+                        log.debug(
+                            f'Alternate source for "{scholar_item.title}" is not a PDF source.'
+                        )
+                except NoSuchElementException:
+                    log.debug(
+                        f'Could not find the alternate source for the item: "{scholar_item.title}"'
+                    )
+
                 if scholar_item.retrieve_metadata():
                     item = scholar_item.to_zotero_item()
                     item_keys = [k for k in item.keys() if item[k]]
@@ -294,8 +336,10 @@ def main(N=None):
                     identify_failed_items.append(scholar_item.zotero_item)
 
                 item["title"] = title_formater(len(items) + 1, item["title"])
-                if scholar_item.get_alternates() or scholar_item.is_pdf:
-                    if scholar_item.download_pdf():
+                if args.download_pdfs:
+                    if args.try_retrieve_from_alternates:
+                        scholar_item.get_alternates()
+                    if scholar_item.download_pdf(max_size=args.max_attachment_size):
                         log.info(f'Downloaded PDF for item "{scholar_item.title}"')
 
                 items.append({"data": item, "item": scholar_item})
