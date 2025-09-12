@@ -62,7 +62,7 @@ class CrossrefEnricher(AbstractMetadataEnricher):
             "rows": 5,
         }  # Get more results for comparison
         try:
-            response = requests.get(self.CROSSREF_URL, params=params, timeout=15)
+            response = requests.get(self.CROSSREF_URL, params=params, timeout=60)
             response.raise_for_status()
             data = response.json()
 
