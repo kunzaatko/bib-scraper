@@ -15,6 +15,48 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import WebDriverWait
 
+# Possible item types available in Zotero. Can be retrieved using the Zotero API using `zot.item_types()`.
+ZOTERO_ITEM_TYPES = [
+    "artwork",
+    "audioRecording",
+    "bill",
+    "blogPost",
+    "book",
+    "bookSection",
+    "case",
+    "conferencePaper",
+    "dataset",
+    "dictionaryEntry",
+    "document",
+    "email",
+    "encyclopediaArticle",
+    "film",
+    "forumPost",
+    "hearing",
+    "instantMessage",
+    "interview",
+    "journalArticle",
+    "letter",
+    "magazineArticle",
+    "manuscript",
+    "map",
+    "newspaperArticle",
+    "note",
+    "patent",
+    "podcast",
+    "preprint",
+    "presentation",
+    "radioBroadcast",
+    "report",
+    "computerProgram",
+    "standard",
+    "statute",
+    "tvBroadcast",
+    "thesis",
+    "videoRecording",
+    "webpage",
+]
+
 
 class ScholarItem:
     def __init__(
@@ -213,7 +255,10 @@ class ScholarItem:
         :param enriched: Dict of enriched metadata
         """
         if enriched.get("itemType", self.item_type) != self.item_type:
-            self.item_type = enriched["itemType"]
+            if enriched["itemType"] not in ZOTERO_ITEM_TYPES:
+                self.logger.warning(f'Unknown item type: "{enriched["itemType"]}"')
+            else:
+                self.item_type = enriched["itemType"]
             # FIX: Here we are applying for all potential enrichers instead and mutating instead of checking, which
             # enricher is the best <07-09-25>
             self._setup_zotero_template()
@@ -271,12 +316,12 @@ class ScholarItem:
         return True
 
     def _setup_zotero_template(self):
-        self.zotero_item = self.zot.item_template(self.item_type)
         if not self.zotero_item:
             self.logger.error(
                 f"Could not find Zotero template for item type '{self.item_type}'"
             )
             self.zotero_item = {}
+        self.zotero_item = self.zot.item_template(self.item_type)
         if "title" in self.zotero_item.keys():
             self.zotero_item["title"] = self.title
         if "abstractNote" in self.zotero_item.keys():
