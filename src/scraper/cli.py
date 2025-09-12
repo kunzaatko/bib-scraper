@@ -271,7 +271,7 @@ def main(N=None):
                         link = alternate_source.get_attribute("href")
                         scholar_item.with_alternate_source(link)
                         log.debug(
-                            f'Alternate source for "{scholar_item.title}" PDF found "{link}"'
+                            f'Alternate source for "{scholar_item.title}" PDF found: {link}'
                         )
                     else:
                         log.debug(
