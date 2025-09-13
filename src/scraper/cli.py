@@ -1,4 +1,5 @@
 import argparse
+import json
 import logging
 import logging.config
 import os
@@ -158,6 +159,20 @@ def main(N=None):
         args.zotero_library_id, args.zotero_library_type, args.zotero_api_key
     )
 
+    cache_file = "scraping_cache.json"
+    cached_items = []
+    cached_dict = {}
+    if os.path.exists(cache_file):
+        with open(cache_file, "r") as f:
+            cache_data = json.load(f)
+            cached_items = cache_data.get("processed_items", [])
+            for ci in cached_items:
+                key = ci["item_dict"]["title"]
+                cached_dict[key] = ci
+        log.info(f"Loaded {len(cached_items)} items from cache.")
+
+    items = []
+
     title_formater = (
         (
             lambda index,
@@ -168,7 +183,6 @@ def main(N=None):
     )
 
     # Get or create parent collection
-    parent_collection_id = None
     try:
         parent_collection_id = utils.get_or_create_collection(
             zot, args.zotero_parent_collection_name, logger=log
@@ -179,7 +193,6 @@ def main(N=None):
 
     # Get or create date-stamped sub-collection
     today_date = datetime.now().strftime("%Y-%m-%d")
-    date_collection_id = None
     try:
         date_collection_id = utils.get_or_create_collection(
             zot, today_date, parent_collection_id, logger=log
@@ -196,7 +209,6 @@ def main(N=None):
     browser = uc.Chrome(version_main=139, options=options)
 
     identify_failed_items = []
-    identify_failed_logfile = f"failed-to-identify-items-{today_date}.toml"
 
     with browser:
         browser.get("https://scholar.google.com/")
@@ -258,32 +270,14 @@ def main(N=None):
 
                 log.info(f'Processing item {len(items) + 1}: "{scholar_item.title}"...')
 
-                try:
-                    alternate_source = div.find_element(
-                        By.CSS_SELECTOR, "div.gs_ggs.gs_fl"
-                    ).find_element(By.TAG_NAME, "a")
-                    metadata_pattern = re.compile(r"\[([a-zA-Z0-9_-]+)\]")
-                    found_metadata = [
-                        t.lower()
-                        for t in metadata_pattern.findall(alternate_source.text)
-                    ]
-                    if "pdf" in found_metadata:
-                        link = alternate_source.get_attribute("href")
-                        scholar_item.with_alternate_source(link)
-                        log.debug(
-                            f'Alternate source for "{scholar_item.title}" PDF found: {link}'
-                        )
-                    else:
-                        log.debug(
-                            f'Alternate source for "{scholar_item.title}" is not a PDF source.'
-                        )
-                except NoSuchElementException:
-                    log.debug(
-                        f'Could not find the alternate source for the item: "{scholar_item.title}"'
-                    )
-
-                if scholar_item.retrieve_metadata():
-                    item = scholar_item.to_zotero_item()
+                # Check cache
+                key = scholar_item.title
+                if key in cached_dict:
+                    ci = cached_dict[key]
+                    log.info(f"Item '{scholar_item.title}' retrieved from cache.")
+                    scholar_item = ScholarItem.from_dict(ci["item_dict"])
+                    scholar_item.with_zotero(zot).with_logger(log)
+                    item = ci["data"]
                     item_keys = [k for k in item.keys() if item[k]]
                     if "DOI" in item_keys:
                         log.info(
@@ -291,7 +285,7 @@ def main(N=None):
                                 f"""\
                                 Found [magenta]DOI[/magenta] "{
                                     item["DOI"]
-                                }". Enriched item has keys {
+                                }". Cached item has keys {
                                     ", ".join(
                                         [f"[magenta]{k}[/magenta]" for k in item_keys]
                                     )
@@ -304,9 +298,9 @@ def main(N=None):
                         log.info(
                             dedent(
                                 f"""\
-                                 [bold]DOI not found[/bold] for item {
+                                 [bold]DOI not found[/bold] for cached item {
                                     len(items) + 1
-                                }. Enriched item has keys {
+                                }. Cached item has keys {
                                     ", ".join(
                                         [f"[magenta]{k}[/magenta]" for k in item_keys]
                                     )
@@ -316,33 +310,79 @@ def main(N=None):
                             extra={"markup": True},
                         )
                 else:
-                    item = scholar_item.to_zotero_item()
-                    item_keys = [k for k in item.keys() if item[k]]
-                    log.warning(
-                        f"Failed to enrich metadata for item {len(items) + 1}..."
-                    )
-                    log.info(
-                        dedent(
-                            f"""\
-                            Item has keys {
-                                ", ".join(
-                                    [f"[magenta]{k}[/magenta]" for k in item_keys]
-                                )
-                            }\
-                        """
-                        ),
-                        extra={"markup": True},
-                    )
-                    identify_failed_items.append(scholar_item.zotero_item)
+                    if scholar_item.retrieve_metadata():
+                        item = scholar_item.to_zotero_item()
+                        item_keys = [k for k in item.keys() if item[k]]
+                        if "DOI" in item_keys:
+                            log.info(
+                                dedent(
+                                    f"""\
+                                    Found [magenta]DOI[/magenta] "{
+                                        item["DOI"]
+                                    }". Enriched item has keys {
+                                        ", ".join(
+                                            [
+                                                f"[magenta]{k}[/magenta]"
+                                                for k in item_keys
+                                            ]
+                                        )
+                                    }\
+                                    """
+                                ),
+                                extra={"markup": True},
+                            )
+                        else:
+                            log.info(
+                                dedent(
+                                    f"""\
+                                     [bold]DOI not found[/bold] for item {
+                                        len(items) + 1
+                                    }. Enriched item has keys {
+                                        ", ".join(
+                                            [
+                                                f"[magenta]{k}[/magenta]"
+                                                for k in item_keys
+                                            ]
+                                        )
+                                    }\
+                                """
+                                ),
+                                extra={"markup": True},
+                            )
+                    else:
+                        item = scholar_item.to_zotero_item()
+                        item_keys = [k for k in item.keys() if item[k]]
+                        log.warning(
+                            f"Failed to enrich metadata for item {len(items) + 1}..."
+                        )
+                        log.info(
+                            dedent(
+                                f"""\
+                                Item has keys {
+                                    ", ".join(
+                                        [f"[magenta]{k}[/magenta]" for k in item_keys]
+                                    )
+                                }\
+                            """
+                            ),
+                            extra={"markup": True},
+                        )
+                        identify_failed_items.append(scholar_item.zotero_item)
 
-                item["title"] = title_formater(len(items) + 1, item["title"])
-                if args.download_pdfs:
-                    if args.try_retrieve_from_alternates:
-                        scholar_item.get_alternates()
-                    if scholar_item.download_pdf(max_size=args.max_attachment_size):
-                        log.info(f'Downloaded PDF for item "{scholar_item.title}"')
+                    item["title"] = title_formater(
+                        len(items) + 1, item["title"]
+                    )  # NOTE: Cached retrieved title is already formatted
+                    if args.download_pdfs:
+                        if args.try_retrieve_from_alternates:
+                            scholar_item.get_alternates()
+                        if scholar_item.download_pdf(max_size=args.max_attachment_size):
+                            log.info(f'Downloaded PDF for item "{scholar_item.title}"')
 
                 items.append({"data": item, "item": scholar_item})
+                cached_dict[key] = {"data": item, "item_dict": scholar_item.to_dict()}
+                cache_data = {"processed_items": list(cached_dict.values())}
+                with open(cache_file, "w") as f:
+                    json.dump(cache_data, f, indent=2)
                 progress.update(items_task, advance=1)
             if len(items) >= args.item_limit:
                 break
@@ -366,9 +406,73 @@ def main(N=None):
     added_items = []
     create_failed_items = []
     attachments_uploaded = []
-    create_failed_logfile = f"failed-to-create-items-{today_date}.toml"
     attachments_failed = []
+
+    try:
+        upload_items(
+            items,
+            zot,
+            date_collection_id,
+            added_items,
+            attachments_failed,
+            attachments_uploaded,
+            create_failed_items,
+            log,
+        )
+    except Exception as e:
+        log.error(f"Error uploading items: {e}")
+
+    # NOTE: Effectively once the items are uploaded, this should not fail <04-09-25>
+    log.info("Adding items to the date collection...")
+    for _, item in track(
+        added_items,
+        description="Adding items to collection...",
+    ):
+        zot.addto_collection(date_collection_id, item)
+
+    log.info(
+        f'[bold]Summary:[/bold] Added {len(added_items)} items to collection "{date_collection_id}" as a subcollection of "{parent_collection_id}"',
+        extra={"markup": True},
+    )
+
+    create_failed_logfile = f"failed-to-create-items-{today_date}.toml"
+    if create_failed_items:
+        log.warning(
+            f'[bold]Summary:[/bold] Failed to create {len(create_failed_items)} items. Failed items have been logged to "{create_failed_logfile}".',
+            extra={"markup": True},
+        )
+        for item in create_failed_items:
+            log_failed_item(item, create_failed_logfile, log)
+
     attachments_failed_logfile = f"failed-to-upload-attachments-{today_date}.toml"
+    if attachments_failed:
+        log.warning(
+            f'[bold]Summary:[/bold] Failed to upload attachments for {len(attachments_failed)} items. Failed items have been logged to "{create_failed_logfile}".',
+            extra={"markup": True},
+        )
+        for item in attachments_failed:
+            log_failed_item(item, attachments_failed_logfile, log)
+
+    identify_failed_logfile = f"failed-to-identify-items-{today_date}.toml"
+    if identify_failed_items:
+        log.warning(
+            f'[bold]Summary:[/bold] Failed to identify {len(identify_failed_items)} items. Failed items have been logged to "{identify_failed_logfile}".',
+            extra={"markup": True},
+        )
+        for item in identify_failed_items:
+            log_failed_item(item, identify_failed_logfile, log)
+
+
+def upload_items(
+    items,
+    zot,
+    date_collection_id,
+    added_items,
+    attachments_failed,
+    attachments_uploaded,
+    create_failed_items,
+    log,
+):
     try:
         for items_chunk in track(
             [items[i : i + 50] for i in range(0, len(items), 50)],
@@ -410,43 +514,6 @@ def main(N=None):
     except Exception as e:
         log.warning(f"Error adding items to Zotero: {e}")
         return 3
-
-    # NOTE: Effectively once the items are uploaded, this should not fail <04-09-25>
-    log.info("Adding items to the date collection...")
-    for _, item in track(
-        added_items,
-        description="Adding items to collection...",
-    ):
-        zot.addto_collection(date_collection_id, item)
-
-    log.info(
-        f'[bold]Summary:[/bold] Added {len(added_items)} items to collection "{date_collection_id}" as a subcollection of "{parent_collection_id}"',
-        extra={"markup": True},
-    )
-
-    if create_failed_items:
-        log.warning(
-            f'[bold]Summary:[/bold] Failed to create {len(create_failed_items)} items. Failed items have been logged to "{create_failed_logfile}".',
-            extra={"markup": True},
-        )
-        for item in create_failed_items:
-            log_failed_item(item, create_failed_logfile, log)
-
-    if attachments_failed:
-        log.warning(
-            f'[bold]Summary:[/bold] Failed to upload attachments for {len(attachments_failed)} items. Failed items have been logged to "{create_failed_logfile}".',
-            extra={"markup": True},
-        )
-        for item in attachments_failed:
-            log_failed_item(item, attachments_failed_logfile, log)
-
-    if identify_failed_items:
-        log.warning(
-            f'[bold]Summary:[/bold] Failed to identify {len(identify_failed_items)} items. Failed items have been logged to "{identify_failed_logfile}".',
-            extra={"markup": True},
-        )
-        for item in identify_failed_items:
-            log_failed_item(item, identify_failed_logfile, log)
 
 
 if __name__ == "__main__":

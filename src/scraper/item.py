@@ -9,6 +9,7 @@ import humanize
 import pathvalidate
 from bs4 import BeautifulSoup
 from pyzotero.zotero import Zotero
+from selenium.common.exceptions import NoSuchElementException, TimeoutException
 from selenium.webdriver.chrome.webdriver import WebDriver
 from selenium.webdriver.common.action_chains import ActionChains
 from selenium.webdriver.common.by import By
@@ -193,6 +194,31 @@ class ScholarItem:
             item.with_url(url)
         item.abstract = abstract
         item.authors = authors
+
+        try:
+            alternate_source = div_soup.select_one("div.gs_ggs.gs_fl")
+            if alternate_source:
+                alternate_anchor = alternate_source.find_next("a")
+                if alternate_anchor:
+                    metadata_pattern = re.compile(r"\[([a-zA-Z0-9_-]+)\]")
+                    found_metadata = [
+                        t.lower()
+                        for t in metadata_pattern.findall(alternate_anchor.text)
+                    ]
+                    if "pdf" in found_metadata and alternate_anchor:
+                        link = alternate_anchor["href"]
+                        item.with_alternate_source(link)
+                        item.logger.debug(
+                            f'Alternate source for "{item.title}" PDF found: {link}'
+                        )
+                    else:
+                        item.logger.debug(
+                            f'Alternate source for "{item.title}" is not a PDF source.'
+                        )
+        except NoSuchElementException:
+            item.logger.debug(
+                f'Could not find the alternate source for the item: "{item.title}"'
+            )
         return item
 
     def download_pdf(self, max_size=None) -> Optional[Path]:
@@ -263,6 +289,8 @@ class ScholarItem:
             # enricher is the best <07-09-25>
             self._setup_zotero_template()
         for key, value in enriched.items():
+            if key == "itemType":
+                continue
             if not update_title and key == "title":
                 self.zotero_item["title"] = self.title
             elif key in self.zotero_item.keys():
@@ -315,13 +343,66 @@ class ScholarItem:
 
         return True
 
+    # FIX: Alternates are currently not cached, which can be an issue <12-09-25>
+    def to_dict(self) -> dict:
+        d = dict()
+        for serializable in [
+            "abstract",
+            "alternate_pdf_sources",
+            "authors",
+            "is_book",
+            "is_html",
+            "is_pdf",
+            "item_type",
+            "metadata_tags",
+            "timeout",
+            "title",
+            "url",
+            "zot_id",
+            "zotero_item",
+        ]:
+            d[serializable] = getattr(self, serializable)
+
+        if self.attachments:
+            d["attachments"] = [str(a) for a in self.attachments]
+
+        return d
+
+    @classmethod
+    def from_dict(cls, d: dict):
+        assert "title" in d.keys()
+        item = cls(d["title"])
+        for k in [
+            "abstract",
+            "alternate_pdf_sources",
+            "authors",
+            "is_book",
+            "is_html",
+            "is_pdf",
+            "item_type",
+            "metadata_tags",
+            "timeout",
+            "url",
+            "zot_id",
+            "zotero_item",
+        ]:
+            if k in d.keys():
+                setattr(item, k, d[k])
+
+        if "attachments" in d.keys():
+            setattr(item, "attachments", [Path(a) for a in d["attachments"]])
+
+        return item
+
     def _setup_zotero_template(self):
+        assert self.zot
+        assert self.item_type in ZOTERO_ITEM_TYPES
+        self.zotero_item = self.zot.item_template(self.item_type)
         if not self.zotero_item:
             self.logger.error(
                 f"Could not find Zotero template for item type '{self.item_type}'"
             )
             self.zotero_item = {}
-        self.zotero_item = self.zot.item_template(self.item_type)
         if "title" in self.zotero_item.keys():
             self.zotero_item["title"] = self.title
         if "abstractNote" in self.zotero_item.keys():
