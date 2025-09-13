@@ -1,3 +1,7 @@
+<p align="center">
+    <img src="./assets/logo.png" alt="A Google Scholar logo with a knife over it that signifies scraping" style="width: 45%">
+</p>
+
 # Bib Scraper
 
 A CLI tool designed to automate the process of scraping scholarly articles from Google Scholar and integrating them into
