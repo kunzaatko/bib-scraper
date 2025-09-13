@@ -3,7 +3,6 @@ import json
 import logging
 import logging.config
 import os
-import re
 from datetime import datetime
 from textwrap import dedent
 
@@ -11,7 +10,7 @@ import toml
 import undetected_chromedriver as uc
 from rich.console import Console
 from rich.progress import Progress, track
-from selenium.common.exceptions import NoSuchElementException, TimeoutException
+from selenium.common.exceptions import TimeoutException
 from selenium.webdriver.common.by import By
 from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.support import expected_conditions as EC
@@ -263,7 +262,6 @@ def main(N=None):
                 scholar_item = (
                     ScholarItem.from_div(div_html)
                     .with_zotero(zot)
-                    .with_driver_and_elem(browser, div)
                     .with_logger(log)
                     .with_timeout(args.timeout)
                 )
@@ -374,7 +372,9 @@ def main(N=None):
                     )  # NOTE: Cached retrieved title is already formatted
                     if args.download_pdfs:
                         if args.try_retrieve_from_alternates:
+                            scholar_item.with_driver_and_elem(browser, div)
                             scholar_item.get_alternates()
+
                         if scholar_item.download_pdf(max_size=args.max_attachment_size):
                             log.info(f'Downloaded PDF for item "{scholar_item.title}"')
 
@@ -473,6 +473,7 @@ def upload_items(
     create_failed_items,
     log,
 ):
+    successful_items = []
     try:
         for items_chunk in track(
             [items[i : i + 50] for i in range(0, len(items), 50)],
@@ -485,35 +486,34 @@ def upload_items(
                 log.warning(f"Some items failed to be added: {response['failed']}")
                 create_failed_items.extend(response["failed"].items())
 
-            successful_items = [
-                items_chunk[int(k) - 1]["item"].with_zot_id(v["key"])
+            successful = [
+                items_chunk[int(k)]["item"].with_zot_id(v["key"])
                 for (k, v) in response["successful"].items()
             ]
 
-            for item in track(successful_items, description="Uploading attachments..."):
-                try:
-                    if item.attachments and item.upload_attachments():
-                        attachments_uploaded.append(
-                            {
-                                "title": item.title,
-                                "attachemts": [str(i) for i in item.attachments],
-                            }
-                        )
-                except Exception as e:
-                    attachments_failed.append(
-                        {
-                            "title": item.title,
-                            "attachemts": [str(i) for i in item.attachments],
-                        }
-                    )
-                    log.warning(
-                        f'Error uploading attachments for item "{item.title}": {e}'
-                    )
+            successful_items.extend(successful)
+            added_items.extend(successful)
 
-            added_items.extend(response["successful"].items())
     except Exception as e:
         log.warning(f"Error adding items to Zotero: {e}")
-        return 3
+
+    for item in track(successful_items, description="Uploading attachments..."):
+        try:
+            if item.attachments and item.upload_attachments():
+                attachments_uploaded.append(
+                    {
+                        "title": item.title,
+                        "attachemts": [str(i) for i in item.attachments],
+                    }
+                )
+        except Exception as e:
+            attachments_failed.append(
+                {
+                    "title": item.title,
+                    "attachemts": [str(i) for i in item.attachments],
+                }
+            )
+            log.warning(f'Error uploading attachments for item "{item.title}": {e}')
 
 
 if __name__ == "__main__":
