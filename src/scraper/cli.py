@@ -3,6 +3,7 @@ import json
 import logging
 import logging.config
 import os
+import subprocess
 from datetime import datetime
 from textwrap import dedent
 
@@ -54,6 +55,11 @@ DEFAULT_LOGGING = {
     },
 }
 logging.config.dictConfig(DEFAULT_LOGGING)
+
+
+def chrome_version(executable: str) -> int:
+    ver = subprocess.run([executable, "--version"], capture_output=True)
+    return int(ver.stdout.split()[2].split(b".")[0])
 
 
 def log_failed_item(item_data: dict, filename, log=logging.getLogger(__name__)):
@@ -118,6 +124,12 @@ def argument_parser():
         default=True,
         type=bool,
         help="Prepend the item title with the index of the item from Google Scholar. Defaults to True.",
+    )
+    parser.add_argument(
+        "--chrome-executable",
+        default="google-chrome-stable",
+        type=str,
+        help="Google Chrome executable name used for determining the version. Defaults to 'google-chrome-stable'.",
     )
     parser.add_argument(
         "--download-pdfs",
@@ -204,8 +216,9 @@ def main(N=None):
 
     options = uc.ChromeOptions()
     options.add_argument("--disable-popup-blocking")
-    # TODO: Recognize the chrome version that is used with `google-chrome --version` <04-09-25>
-    browser = uc.Chrome(version_main=139, options=options)
+    browser = uc.Chrome(
+        version_main=chrome_version(args.chrome_executable), options=options
+    )
 
     identify_failed_items = []
 
