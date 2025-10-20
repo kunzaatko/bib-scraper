@@ -13,3 +13,8 @@ uv.lock
 *.log
 *.json
 todo.md
+assets/showcase.mp4
+assets/showcase.gif
+assets/showcase_small.gif
+assets/showcase_smallest.gif
+assets/logo.xcf
