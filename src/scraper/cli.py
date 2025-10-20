@@ -435,14 +435,6 @@ def main(N=None):
     except Exception as e:
         log.error(f"Error uploading items: {e}")
 
-    # NOTE: Effectively once the items are uploaded, this should not fail <04-09-25>
-    log.info("Adding items to the date collection...")
-    for item in track(
-        added_items,
-        description="Adding items to collection...",
-    ):
-        zot.addto_collection(date_collection_id, item)
-
     log.info(
         f'[bold]Summary:[/bold] Added {len(added_items)} items to collection "{date_collection_id}" as a subcollection of "{parent_collection_id}"',
         extra={"markup": True},
@@ -479,7 +471,7 @@ def main(N=None):
 def upload_items(
     items,
     zot,
-    date_collection_id,
+    collection_id,
     added_items,
     attachments_failed,
     attachments_uploaded,
@@ -493,11 +485,13 @@ def upload_items(
             description="Adding items to Zotero...",
         ):
             response = zot.create_items([i["data"] for i in items_chunk])
-            # , date_collection_id)
 
             if len(response["failed"]):
                 log.warning(f"Some items failed to be added: {response['failed']}")
                 create_failed_items.extend(response["failed"].items())
+
+            for k, v in response["successful"].items():
+                zot.addto_collection(collection_id, v)
 
             successful = [
                 items_chunk[int(k)]["item"].with_zot_id(v["key"])
