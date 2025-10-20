@@ -38,7 +38,7 @@ Run the script from the command line using `uv run`.
 $ uv run bib-scraper --query "\"SIM parameter estimation\" OR \"SIM image reconstruction algorithm\"" --item-limit 15
 ```
 
-![showcase of the functioning of bib-scraper](https://github.com/user-attachments/assets/7fdd862f-3ecf-4334-82d4-f035f1a4b780)
+https://github.com/user-attachments/assets/a756d4b7-b422-40aa-86e2-dab45a33562c
 
 To see the command-line help and all the available options, use the `--help` flag:
 
