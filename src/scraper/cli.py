@@ -437,7 +437,7 @@ def main(N=None):
 
     # NOTE: Effectively once the items are uploaded, this should not fail <04-09-25>
     log.info("Adding items to the date collection...")
-    for _, item in track(
+    for item in track(
         added_items,
         description="Adding items to collection...",
     ):
