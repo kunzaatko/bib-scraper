@@ -38,7 +38,14 @@ Run the script from the command line using `uv run`.
 $ uv run bib-scraper --query "\"SIM parameter estimation\" OR \"SIM image reconstruction algorithm\"" --item-limit 15
 ```
 
-https://github.com/user-attachments/assets/a756d4b7-b422-40aa-86e2-dab45a33562c
+<p align="center">
+    <img src="https://github.com/user-attachments/assets/2b01ba3a-e07d-4743-a81b-d118c39116d2" alt="Showcase GIF" style="width: 80%">
+</p>
+
+<details>
+<summary> Full resolution showcase video </summary>
+[full resolution output](https://github.com/user-attachments/assets/a756d4b7-b422-40aa-86e2-dab45a33562c)
+</details>
 
 To see the command-line help and all the available options, use the `--help` flag:
 
