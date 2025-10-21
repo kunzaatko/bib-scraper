@@ -16,12 +16,10 @@ your Zotero account. This tool is particularly useful for researchers collecting
 
 ## Installation
 
-Fetch the dependencies by running 
+Install the tool using `uv` by running
 ```bash
-$ uv sync
+$ uv tool install git+https://github.com/kunzaatko/bib-scraper
 ```
-in the root directory of the project.
-None other installation step is required.
 
 *(Note: You might need to install `uv` first: `pip install uv`)*
 
@@ -32,10 +30,10 @@ variables.
 
 ## Usage
 
-Run the script from the command line using `uv run`.
+Run the script from the command line using `uv tool run --from scraper bib-scraper`.
 
 ```bash
-$ uv run bib-scraper --query "\"SIM parameter estimation\" OR \"SIM image reconstruction algorithm\"" --item-limit 15
+$ uv tool run --from scraper bib-scraper --query "\"SIM parameter estimation\" OR \"SIM image reconstruction algorithm\"" --item-limit 15
 ```
 
 <p align="center">
