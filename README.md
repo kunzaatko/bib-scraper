@@ -42,7 +42,9 @@ $ uv tool run --from scraper bib-scraper --query "\"SIM parameter estimation\" O
 
 <details>
 <summary> Full resolution showcase video </summary>
+    
 [full resolution output](https://github.com/user-attachments/assets/a756d4b7-b422-40aa-86e2-dab45a33562c)
+
 </details>
 
 To see the command-line help and all the available options, use the `--help` flag:
